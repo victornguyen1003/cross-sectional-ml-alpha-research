@@ -1,0 +1,50 @@
+[paths]
+raw = "../data/raw"
+normalized = "../data/normalized"
+dataset = "../data/dataset"
+runs = "../artifacts/runs"
+
+[research]
+start = "2010-01-01"
+end = "2025-12-31"
+train_start = "2011-01-01"
+validation_start = "2020-01-01"
+test_start = "2024-01-01"
+seed = 103
+horizon = 20
+rebalance = 20
+min_history = 252
+liquidity_window = 60
+universe_size = 500
+decile = 0.1
+
+[fetch]
+delay_seconds = 3.0
+retries = 3
+timeout_seconds = 30
+# Verify representative dates before explicitly requesting --bulk.
+probe_dates = ["2010-01-04", "2025-10-01"]
+
+[model]
+cv_splits = 3
+search = "grid"
+random_candidates = 4
+ridge_alpha = [0.1, 1.0, 10.0]
+lasso_alpha = [0.0001, 0.001, 0.01]
+elasticnet_alpha = [0.0001, 0.001, 0.01]
+elasticnet_l1_ratio = [0.25, 0.75]
+lgbm_num_leaves = [7, 15]
+lgbm_learning_rate = [0.03, 0.1]
+lgbm_n_estimators = [100]
+
+[costs]
+commission_bps = 14.25
+sell_tax_bps = 30.0
+slippage_bps = 10.0
+borrow_rate = 0.03
+initial_nav = 10000000.0
+
+[evaluation]
+slippage_bps = [0.0, 10.0, 25.0]
+borrow_rates = [0.0, 0.03, 0.06]
+
