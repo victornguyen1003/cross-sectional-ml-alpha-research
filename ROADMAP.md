@@ -52,7 +52,7 @@ Implement the quantitative research pipeline using the following Python modules 
 
 ### Milestone 4: Expose Reproducible Commands and Research Outputs
 
-- Provide `fetch`, `fetch-factors`, `validate-data`, `build-dataset`, `run`, `report`, and `regress-factors` commands, each accepting a configuration path. Require an explicit final-test option after the selected specification is frozen.
+- Provide `fetch`, `fetch-calendar`, `fetch-securities`, `fetch-actions`, `fetch-factors`, `validate-data`, `build-dataset`, `run`, `report`, and `regress-factors` commands, each accepting a configuration path. Require an explicit final-test option after the selected specification is frozen.
 - Give every run a lean manifest containing resolved configuration (including the seed), dependency versions, Git revision and dirty state, source/input fingerprints, file checksums, and the originating validation-run reference. Reuse a single pre-fit snapshot; keep selection files limited to model, parameters, run reference, and configuration/code/input fingerprints.
 - Save predictions, model artifacts, eligibility decisions, holdings, trades, daily returns, costs, metrics, and data-quality diagnostics.
 - Report rank correlation, decile returns, gross/net performance, drawdown, volatility, Sharpe ratio, turnover, exposure drift, long/short contributions, and cost sensitivities. Include momentum and equal-weight eligible-universe references.

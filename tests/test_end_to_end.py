@@ -29,8 +29,22 @@ def test_offline_cli_reproduction_and_frozen_holdout(cached_research, monkeypatc
     for filename in ["predictions.parquet", "trades.parquet", "daily.parquet", "targets.parquet"]:
         pd.testing.assert_frame_equal(pd.read_parquet(a / filename), pd.read_parquet(b / filename))
     assert json.loads((a / "metrics.json").read_text()) == json.loads((b / "metrics.json").read_text())
+    # Appending validation history must not invalidate the frozen input snapshot.
+    main(["validate-data", "--config", config])
+    assert len(list((config_path.parent / "validation").glob("*.json"))) == 2
     main(["run", "--config", config, "--final-test", "--selection", str(a / "selection.json"), "--name", "test"])
+    final_run = root / "test"
+    original_report = (final_run / "report.md").read_bytes()
+    original_chart = (final_run / "performance.png").read_bytes()
     main(["report", "--config", config, "--run", str(root / "test")])
+    assert (final_run / "report.md").read_bytes() == original_report
+    assert (final_run / "performance.png").read_bytes() == original_chart
+    version = next(final_run.glob("report-*.md"))
+    chart = final_run / version.name.replace("report-", "performance-").replace(".md", ".png")
+    assert chart.stat().st_size > 1000
+    assert f"![Performance]({chart.name})" in version.read_text()
+    assert "Generated at:" in version.read_text()
+    assert "[manifest.json](manifest.json)" in version.read_text()
     predictions = pd.read_parquet(root / "test" / "predictions.parquet")
     assert predictions.date.min() >= pd.Timestamp("2022-01-01")
     assert pd.read_parquet(a / "predictions.parquet").date.max() < pd.Timestamp("2022-01-01")

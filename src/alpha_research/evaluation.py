@@ -1,7 +1,9 @@
 """Predictive diagnostics, ledger summaries, reproducible sensitivity replays."""
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 import numpy as np
 import pandas as pd
@@ -72,6 +74,10 @@ def report(run_path):
     metrics = json.loads((root / "metrics.json").read_text())
     coverage = json.loads((root / "coverage.json").read_text())
     daily = pd.read_parquet(root / "daily.parquet")
+    created_at = datetime.now(timezone.utc)
+    suffix = (f"-{created_at:%Y%m%dT%H%M%S%fZ}-{uuid4().hex[:8]}"
+              if (root / "report.md").exists() or (root / "performance.png").exists() else "")
+    report_path, image_path = root / f"report{suffix}.md", root / f"performance{suffix}.png"
     fig, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=True, layout="constrained")
     initial = json.loads((root / "manifest.json").read_text())["config"]["costs"]["initial_nav"]
     axes[0].plot(daily.date, daily.nav / initial, label="Net")
@@ -89,14 +95,17 @@ def report(run_path):
     synthetic = any("SYNTHETIC" in source for source in coverage.get("sources", []))
     title = "SYNTHETIC SOFTWARE DEMO" if synthetic else "Exploratory research simulation"
     fig.suptitle(f"{title} — data and execution limitations apply")
-    fig.savefig(root / "performance.png", dpi=150)
+    with image_path.open("xb") as handle:
+        fig.savefig(handle, format="png", dpi=150)
     plt.close(fig)
     lines = [f"# {title}", "", "Status: exploratory / provisional.", "",
+             f"Generated at: {created_at.isoformat()}.", "",
+             "Run configuration and input fingerprints: [manifest.json](manifest.json).", "",
              f"Data sources: {', '.join(coverage.get('sources', ['UNKNOWN']))}.", "",
              "Metrics and assumptions: `metrics.json`, `manifest.json`, and `coverage.json`.", "",
              f"Net total return: {metrics['portfolio']['total_return']:.2%}.",
              f"Mean rank IC: {metrics['predictive']['mean_rank_ic']}.", "",
-             "![Performance](performance.png)", "", "## Data limitations", ""]
+             f"![Performance]({image_path.name})", "", "## Data limitations", ""]
     lines.extend(f"- {note}" for note in coverage["notes"])
     lines.extend(["", "## Common-factor return attribution", "",
                   f"Daily alpha: {attribution['alpha_daily']:.6g}; "
@@ -128,8 +137,9 @@ def report(run_path):
                   "- Holdings are marked at the period end without forced liquidation; closing costs are not charged on open positions.",
                   "- Decile returns are descriptive labeled-sample diagnostics, not executable portfolio returns.",
                   "- No statistical confidence or live tradability is implied by a positive Sharpe ratio.", ""])
-    (root / "report.md").write_text("\n".join(lines))
-    return root / "report.md"
+    with report_path.open("x", encoding="utf-8") as handle:
+        handle.write("\n".join(lines))
+    return report_path
 
 
 def save_evaluation(out, config, result):

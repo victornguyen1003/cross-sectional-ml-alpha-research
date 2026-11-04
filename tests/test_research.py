@@ -18,7 +18,9 @@ def test_future_mutations_cannot_change_features_or_universe():
                           for i, date in enumerate(dates) for sid in ["1000", "1001"]])
     settings = {"min_history": 252, "liquidity_window": 60, "universe_size": 1}
     def compute(frame):
-        frame, actions = normalize_frames(frame)
+        master = pd.DataFrame({"security_id": ["1000", "1001"], "valid_from": dates.min(),
+                               "valid_to": dates.max(), "security_type": "common"})
+        frame, actions = normalize_frames(frame, securities=master)
         return build_features(select_universe(market_panel(frame, actions, dates), settings))
     before = compute(prices)
     prices.loc[prices.date > dates[290], ["open", "close", "high", "low", "value", "volume"]] *= 5

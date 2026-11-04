@@ -82,6 +82,8 @@ def cached_research(tmp_path, monkeypatch, factor_downloads):
     store_response(raw, "exRight/TWT49U", {"startDate": "20180101", "endDate": "20180131", "response": "json"},
                    b'{"stat":"OK","actions":[]}', source="SYNTHETIC_TEST")
     pd.DataFrame({"date": dates}).to_csv(raw / "calendar.csv", index=False)
+    pd.DataFrame(columns=["date", "security_id", "cash_dividend", "share_multiplier",
+                          "subscription_ratio", "subscription_price", "payment_date", "terminal_value"]).to_csv(raw / "actions.csv", index=False)
     pd.DataFrame({"security_id": identifiers, "valid_from": "2018-01-01", "valid_to": "2022-12-31",
                   "security_type": "common"}).to_csv(raw / "securities.csv", index=False)
     content = (Path(__file__).parents[1] / "configs" / "default.toml").read_text()
