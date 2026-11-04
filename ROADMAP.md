@@ -15,8 +15,11 @@ Implement the quantitative research pipeline using the following Python modules 
 7. portfolio.py — Prediction ranking and long-short target portfolio construction.
 8. backtest.py — Daily portfolio accounting, rebalancing, execution assumptions, and transaction costs.
 9. evaluation.py — Predictive metrics, portfolio performance, benchmarks, and sensitivity analysis.
-10. experiments.py — Reproducible experiment execution, configuration, and result storage.
-11. cli.py — Command-line interface for the complete pipeline.
+10. factors.py — Post-backtest regression of portfolio excess returns on supplied common-factor returns.
+11. experiments.py — Minimal orchestration of model fitting, evaluation, and result storage.
+12. config.py — TOML configuration loading and validation.
+13. provenance.py — Input/code fingerprints, run metadata, and frozen final-test safeguards.
+14. cli.py — Command-line interface for the complete pipeline.
 
 ### Milestone 1: Establish the Project and Data Foundation
 
@@ -34,25 +37,26 @@ Implement the quantitative research pipeline using the following Python modules 
 - Store each sample's signal date, entry date, label-end date, security identifier, features, realized return, and cross-sectional return percentile. Train regressors on the percentile target.
 - Fit imputation and scaling using training observations only. Select the universe using information available on the signal date, without requiring future survival or complete future labels.
 - Admit training samples only after their label-end session has completed; purge labels crossing validation or test boundaries.
-- Compare a momentum ranking, OLS/Lasso/Ridge/ElasticNet regression, and LightGBM. Finetune non-linear hyperparameters with grid/randomized search cross validation using the training set. Use seed 103.
+- Compare a momentum ranking, OLS/Lasso/Ridge/ElasticNet regression, and LightGBM. Finetune non-linear hyperparameters with exhaustive grid-search cross-validation using the training set. Use seed 103.
 - Select the model using mean validation Spearman rank correlation across signal dates, breaking ties in favor of the simpler model. Freeze the specification before final testing.
 - Train models on the training set; evaluate and select models and hyperparameters on the validation set; retrain the selected models using the combined training and validation sets; use the final test set for out-of-sample evaluation
 
 ### Milestone 3: Implement Portfolio Accounting and Costs
 
-- Maintain daily holdings, cash, equity, dividend receivables/payables, borrow charges, and a trade ledger. Handle stock distributions and other supported actions explicitly.
+- Maintain daily holdings, cash, equity, dividend receivables/payables, borrow charges, and a trade ledger. Handle stock distributions and other supported actions explicitly. Assume symmetric full subscription: longs pay for all subscribed shares; shorts receive matching cash and owe the additional shares. No optional/partial exercise or rights sales are modeled.
 - Calculate transaction costs from actual traded notional and pre-trade holdings, including opening, covering, reducing, and reversing positions.
 - Default assumptions: 14.25 basis points commission per trade side, 30 basis points tax on stock sales, 10 basis points slippage per side, and 3% annual borrow cost on short market value using calendar-day accrual. Treat these as configurable simulation assumptions. TWSE describes [commission and transaction-tax conventions](https://www.twse.com.tw/en/products/system/trading.html).
 - Predeclare slippage scenarios of 0/10/25 basis points and borrow scenarios of 0%/3%/6%. Assume zero interest on cash and short proceeds.
 - Skip unavailable opening fills and adverse price-limit fills; retain existing positions when exits fail. Do not redistribute unfilled target allocations. Disclose the limits of inferring fills from daily data.
-- Mark suspended holdings at their last observable valuation and flag staleness. Apply documented terminal proceeds where available; keep unresolved terminal positions visible and label affected results provisional. Never remove them at zero P&L.
+- Mark suspended holdings at their last observable valuation and flag staleness. Assume terminal events are always recorded and known before that session's opening and cash-settled before opening NAV and orders; intraday/after-close timing and delayed terminal settlement are not modeled. Apply documented terminal proceeds where available; keep unresolved terminal positions visible and label affected results provisional. Never remove them at zero P&L.
 
 ### Milestone 4: Expose Reproducible Commands and Research Outputs
 
-- Provide `fetch`, `validate-data`, `build-dataset`, `run`, and `report` commands, each accepting a configuration path. Require an explicit final-test option after the selected specification is frozen.
-- Give every run a manifest containing resolved configuration, seed, dependency versions, code revision and dirty-state information, and input checksums.
+- Provide `fetch`, `validate-data`, `build-dataset`, `run`, `report`, and `regress-factors` commands, each accepting a configuration path. Require an explicit final-test option after the selected specification is frozen.
+- Give every run a lean manifest containing resolved configuration (including the seed), dependency versions, Git revision and dirty state, source/input fingerprints, file checksums, and the originating validation-run reference. Reuse a single pre-fit snapshot; keep selection files limited to model, parameters, run reference, and configuration/code/input fingerprints.
 - Save predictions, model artifacts, eligibility decisions, holdings, trades, daily returns, costs, metrics, and data-quality diagnostics.
 - Report rank correlation, decile returns, gross/net performance, drawdown, volatility, Sharpe ratio, turnover, exposure drift, long/short contributions, and cost sensitivities. Include momentum and equal-weight eligible-universe references.
+- Save post-backtest factor-regression point estimates, fitted/residual observations, alignment counts, and source checksums. Factor returns are supplied externally; this diagnostic never affects model selection.
 - Separate validation and final-test outputs. Document experiments and limitations in the README and research specification.
 
 ### Verification and Acceptance

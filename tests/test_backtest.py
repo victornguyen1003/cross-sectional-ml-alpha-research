@@ -115,3 +115,35 @@ def test_opening_fills_do_not_use_later_intraday_prices(market):
     prices.loc[:, "volume"] = 0.0
     changed = simulate(prices, actions, dates[:1], targets, costs)["trades"]
     pd.testing.assert_frame_equal(original, changed)
+
+
+@pytest.mark.parametrize("sid,quantity,cash", [("1000", 6.0, 980.0), ("1001", -6.0, 1020.0)])
+def test_symmetric_full_subscription_cash_and_share_obligations(market, sid, quantity, cash):
+    prices, _, dates, targets, costs = market
+    ex_price = (100 + 0.2 * 20) / 1.2
+    prices.loc[(prices.security_id == sid) & (prices.date >= dates[1]),
+               ["open", "close", "high", "low"]] = [ex_price, ex_price, ex_price + 1, ex_price - 1]
+    actions = pd.DataFrame([{"date": dates[1], "security_id": sid, "share_multiplier": 1.2,
+                             "subscription_ratio": 0.2, "subscription_price": 20.0}])
+    prices, actions = normalize_frames(prices, actions)
+    result = simulate(prices, actions, dates, targets, costs)
+    holdings = result["holdings"]
+    assert holdings.loc[(holdings.date == dates[1]) & (holdings.security_id == sid), "quantity"].iloc[0] == pytest.approx(quantity)
+    assert result["daily"].cash.iloc[1] == pytest.approx(cash)
+    assert result["daily"].nav.tolist() == pytest.approx([1000, 1000, 1000])
+
+
+def test_terminal_settlement_precedes_opening_nav_and_orders(market):
+    prices, _, dates, targets, costs = market
+    actions = pd.DataFrame([{"date": dates[1], "security_id": "1000", "terminal_value": 40.0}])
+    prices, actions = normalize_frames(prices, actions)
+    rebalance = targets.copy()
+    rebalance["entry_date"] = dates[1]
+    result = simulate(prices, actions, dates, pd.concat([targets, rebalance]), costs)
+    trades = result["trades"]
+    # NAV is already 700 after receiving 200 for the terminal long; the short
+    # target is -350, so 1.5 shares are bought to cover. The terminal stock cannot reopen.
+    opening_trades = trades[trades.date == dates[1]]
+    assert opening_trades.security_id.tolist() == ["1001"]
+    assert opening_trades.quantity.iloc[0] == pytest.approx(1.5)
+    assert result["daily"].nav.iloc[1] == pytest.approx(700)

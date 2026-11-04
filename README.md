@@ -13,25 +13,13 @@ uv sync --locked
 uv run --locked pytest
 ```
 
-The lockfile pins the complete environment. The implementation uses functions organized into the eleven modules specified by the roadmap under `src/alpha_research/`.
+The lockfile pins the environment. Pipeline stages use simple functions under `src/alpha_research/`. `experiments.py` only orchestrates runs: `config.py` loads configuration, `data.py` builds datasets, `models.py` fits and selects models, `evaluation.py` saves evaluation outputs, and `provenance.py` preserves input/code fingerprints and final-test guards.
 
-## Reproduce the pipeline offline
+The test suite uses small offline fixtures, including hand-calculated accounting cases. There is no standalone synthetic-data generator.
 
-Generate a deterministic synthetic dataset, including a dividend, a split, a suspension, and a terminal-value event. This is a software demonstration, not Taiwan market evidence. Its calendar is a weekday calendar and its research dates intentionally differ from the historical configuration.
+Each run saves input checksums, resolved configuration, code fingerprints and Git state, dependency versions, predictions, model artifacts, eligibility decisions, target weights, holdings, trades, daily returns, costs, benchmark returns, predictive diagnostics, sensitivity results, and a report/chart below the configured `runs` directory. Existing named runs and cached responses are protected against overwriting.
 
-```bash
-uv run --locked python scripts/generate_demo.py --output artifacts/demo
-uv run --locked alpha-research fetch --config artifacts/demo/demo.toml --offline
-uv run --locked alpha-research validate-data --config artifacts/demo/demo.toml
-uv run --locked alpha-research build-dataset --config artifacts/demo/demo.toml
-uv run --locked alpha-research run --config artifacts/demo/demo.toml --name validation
-uv run --locked alpha-research run --config artifacts/demo/demo.toml --final-test --selection artifacts/demo/runs/validation/selection.json --name final-test
-uv run --locked alpha-research report --config artifacts/demo/demo.toml --run artifacts/demo/runs/final-test
-```
-
-Choose a new demo output directory for another generation. Existing raw responses and named runs are protected against overwriting.
-
-Each run saves input checksums, resolved configuration, code fingerprints and Git state, dependency versions, predictions, model artifacts, eligibility decisions, target weights, holdings, trades, daily returns, cost breakdowns, benchmark returns, predictive diagnostics, sensitivity results, a Markdown report, and a performance chart. Run-local artifacts live below the configured `runs` directory.
+Metadata uses a single snapshot captured before fitting. `manifest.json` records the seed under `config.research.seed`, Git revision and dirty state, source/input fingerprints, file checksums, and the originating `validation_run`. It does not embed the full selection or a Git diff. `selection.json` contains only the model, parameters, validation-run reference, and configuration/code/input fingerprints; feature definitions and validation scores remain in their separate artifacts.
 
 ## Collect historical TWSE data
 
@@ -57,14 +45,38 @@ TWSE daily-price reports provide raw traded shares and TWD value. The public ex-
 
 ## Models and final-test isolation
 
-Compare momentum, OLS, Lasso, Ridge, ElasticNet, and LightGBM using seed 103. Hyperparameters are tuned only inside the training period using expanding chronological date folds and label-end purging. All stocks on a signal date stay in the same fold. `model.search` supports exhaustive grid search or a seeded randomized LightGBM grid subset.
+Compare momentum, OLS, Lasso, Ridge, ElasticNet, and LightGBM using seed 103. Hyperparameters are tuned only inside the training period using expanding chronological date folds and label-end purging. All stocks on a signal date stay in the same fold. Tuning always exhausts the configured parameter grid. Remove the obsolete `model.search` and `model.random_candidates` keys from older configurations.
 
 The training-only best settings for each model are compared on validation mean Spearman rank correlation. Ties favor momentum, OLS, Ridge, Lasso, ElasticNet, then LightGBM. Validation runs use a fixed training-period fit. The final run retrains the chosen specification on matured training and validation labels, then keeps that fit fixed throughout the test period.
 
 A successful validation run produces `selection.json`. Final testing requires both `--final-test` and `--selection`. Configuration, input, or research-code changes invalidate the selection. This guard prevents accidental reuse after changes; it cannot prevent a researcher from repeatedly viewing the final test or manually editing selection files. Keep a research log and treat a viewed final test as spent for future specification selection.
 
-Model files use Python pickle and should only be loaded from trusted runs.
+After reviewing the validation specification, evaluate the held-out test explicitly:
+
+```bash
+uv run --locked alpha-research run --config configs/default.toml --final-test --selection artifacts/runs/validation/selection.json --name final-test
+uv run --locked alpha-research report --config configs/default.toml --run artifacts/runs/final-test
+```
+
+Model files use Python pickle and should only be loaded from trusted runs. Code/configuration changes require rebuilding the dataset and rerunning validation before final testing.
+
+## Common-factor return attribution
+
+`factors.py` fits a post-backtest OLS regression of daily portfolio excess returns on supplied factor returns. Provide a CSV with one unique session `date`, daily decimal `rf`, and factor columns such as `market`, `smb`, `hml`, and `momentum`. `market` must already be an excess return; spread factors are used as supplied. A value of `0.01` means 1%. Use factors matching the Taiwan portfolio's market, currency and close-to-close session convention; no US factor series or Taiwan proxies are downloaded or invented automatically.
+
+```bash
+uv run --locked alpha-research regress-factors --config configs/default.toml --run artifacts/runs/validation --factors data/factors.csv --columns market smb hml momentum
+```
+
+The default dependent variable is the net portfolio `return`; `--return-column gross_return` selects the saved gross series. Use `--risk-free-column NAME` for a different risk-free column, or explicitly pass `--zero-risk-free` to assume zero. Dates are matched exactly and incomplete observations dropped jointly, without forward filling. The command writes `factor_regression/summary.json` and `observations.parquet`, then refreshes the report. Existing attribution output is protected against overwriting.
+
+Outputs include daily alpha, arithmetic annualized alpha (`252 * daily alpha`), loadings, R-squared, residual volatility, alignment counts, and input checksums. These are descriptive point estimates without standard errors or significance tests. They do not enter model selection or change its frozen specification.
 
 ## Interpretation
 
 All reports are labeled exploratory/provisional. Missing historical actions, security identity, terminal values, revisions, actual borrow supply, auction liquidity, and historical fee schedules can materially affect results. The simulator uses fractional shares, synthetic borrowing, zero cash interest, and daily-price fill approximations. See the saved coverage report and research specification before interpreting performance. Positive returns are not a software acceptance criterion.
+
+
+The backtest assumes **symmetric full subscription** of rights: longs pay the full subscription cash and receive all subscribed shares; shorts receive the corresponding cash and owe the proportional additional shares. Neither side can opt out, subscribe partially, or sell rights; funding and actual short-side rights arrangements are not modeled.
+
+Terminal events are assumed **always recorded and known before that session's opening**, with terminal proceeds settled and the position removed before opening NAV and orders are computed. Input dates represent pre-open events. Intraday/after-close announcements and delayed settlement are not modeled; the date-only input schema cannot verify this assumption.

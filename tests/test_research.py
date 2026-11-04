@@ -5,7 +5,7 @@ import pytest
 from alpha_research.data import market_panel, normalize_frames
 from alpha_research.features import FEATURES, build_features
 from alpha_research.labels import build_labels
-from alpha_research.models import make_model, purged_folds
+from alpha_research.models import make_model, parameter_grid, purged_folds
 from alpha_research.portfolio import target_weights
 from alpha_research.universe import select_universe
 
@@ -71,3 +71,11 @@ def test_target_ties_are_deterministic_and_dollar_neutral():
     assert weights.weight.abs().sum() == pytest.approx(1)
     assert set(weights[weights.weight < 0].security_id) == {"1000", "1001"}
     assert set(weights[weights.weight > 0].security_id) == {"1018", "1019"}
+
+
+def test_lightgbm_grid_is_exhaustive():
+    grid = parameter_grid("lightgbm", {"lgbm_num_leaves": [7, 15],
+                                      "lgbm_learning_rate": [0.03, 0.1], "lgbm_n_estimators": [10, 20]})
+    assert len(grid) == 8
+    assert {tuple(row.values()) for row in grid} == {
+        (leaves, rate, trees) for leaves in [7, 15] for rate in [0.03, 0.1] for trees in [10, 20]}

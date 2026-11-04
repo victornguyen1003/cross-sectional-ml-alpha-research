@@ -22,6 +22,29 @@ def test_official_price_schema_and_units():
         parse_prices({"stat": "OK", "tables": []}, "20251001")
 
 
+@pytest.mark.parametrize("status", ["No Data!", "No data", "no data.", "很抱歉，沒有符合條件的資料!"])
+def test_holiday_no_data_responses_are_cached(tmp_path, status):
+    class Response:
+        content = json.dumps({"stat": status}).encode()
+        def raise_for_status(self):
+            pass
+        def json(self):
+            return json.loads(self.content)
+    class Session:
+        calls = 0
+        def get(self, *args, **kwargs):
+            self.calls += 1
+            return Response()
+    session = Session()
+    settings = {"retries": 3, "delay_seconds": 0, "timeout_seconds": 1}
+    params = {"date": "20100101", "response": "json"}
+    payload = fetch_response(tmp_path, "afterTrading/MI_INDEX", params, settings, session=session)
+    assert payload["stat"] == status
+    assert parse_prices(payload, "20100101").empty
+    assert session.calls == 1
+    assert fetch_response(tmp_path, "afterTrading/MI_INDEX", params, settings, offline=True) == payload
+
+
 def test_reference_prices_are_not_guessed_as_total_return_terms():
     with pytest.raises(ValueError, match="corporate-action fields"):
         parse_actions({"fields": ["Date", "Security Code", "Opening Reference Price"],

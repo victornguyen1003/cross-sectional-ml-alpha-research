@@ -56,7 +56,7 @@ def make_model(name, params, seed):
                          StandardScaler(), estimator)
 
 
-def parameter_grid(name, settings, seed):
+def parameter_grid(name, settings):
     if name == "ols":
         return [{}]
     if name in {"ridge", "lasso"}:
@@ -68,11 +68,6 @@ def parameter_grid(name, settings, seed):
                   for values in itertools.product(settings["lgbm_num_leaves"],
                                                   settings["lgbm_learning_rate"],
                                                   settings["lgbm_n_estimators"])]
-    if settings["search"] == "random":
-        rng = np.random.default_rng(seed)
-        indices = sorted(rng.choice(len(candidates), min(len(candidates), settings["random_candidates"]),
-                                    replace=False))
-        candidates = [candidates[index] for index in indices]
     return candidates
 
 
@@ -84,7 +79,7 @@ def tune_models(train, settings, seed):
     chosen, scores = {}, []
     for name in MODEL_ORDER[1:]:
         best, best_score = None, -np.inf
-        for params in parameter_grid(name, settings, seed):
+        for params in parameter_grid(name, settings):
             predictions = []
             for train_i, valid_i in folds:
                 model = make_model(name, params, seed)
@@ -112,3 +107,60 @@ def fit_predict(name, params, train, evaluation, seed):
     model.fit(train[FEATURES], train.target)
     predictions["prediction"] = model.predict(predictions[FEATURES])
     return model, predictions
+
+
+def fit_period(samples, research, settings, frozen=None):
+    """Select on validation, or refit one frozen specification for the final test."""
+    r = research
+    final_test = frozen is not None
+    validation_start, test_start = pd.Timestamp(r["validation_start"]), pd.Timestamp(r["test_start"])
+    train = samples[(samples.date >= pd.Timestamp(r["train_start"])) &
+                    (samples.date < validation_start) & (samples.label_end < validation_start) &
+                    samples.label_available].copy()
+    if train.empty:
+        raise ValueError("No mature initial training samples")
+    fitted, validation_scores = {}, []
+    if final_test:
+        selected = frozen["model"]
+        chosen_params = frozen["params"]
+        fitting = samples[(samples.date >= pd.Timestamp(r["train_start"])) &
+                          (samples.date < test_start) & (samples.label_end < test_start) &
+                          samples.label_available]
+        evaluation = samples[samples.date >= test_start].copy()
+        model, predictions = fit_predict(selected, chosen_params, fitting, evaluation, r["seed"])
+        fitted[selected] = model
+        cv_scores = []
+        period = "test"
+    else:
+        parameters, cv_scores = tune_models(train, settings, r["seed"])
+        evaluation = samples[(samples.date >= validation_start) & (samples.date < test_start) &
+                             (samples.entry_date < test_start)].copy()
+        # Do not evaluate labels that extend into the final-test period.
+        boundary = evaluation.label_end >= test_start
+        evaluation.loc[boundary, ["realized_return", "target"]] = np.nan
+        evaluation.loc[boundary, "label_available"] = False
+        if evaluation.empty:
+            raise ValueError("No validation samples")
+        all_predictions = {}
+        for model_name in MODEL_ORDER:
+            model, predicted = fit_predict(model_name, parameters.get(model_name, {}), train,
+                                           evaluation, r["seed"])
+            fitted[model_name] = model
+            all_predictions[model_name] = predicted
+            validation_scores.append({"model": model_name, "rank_ic": mean_rank_ic(predicted)})
+        finite = [score for score in validation_scores if np.isfinite(score["rank_ic"])]
+        if not finite:
+            raise ValueError("No usable validation rank correlations; cannot freeze selection")
+        best_score = max(score["rank_ic"] for score in finite)
+        selected = next(score["model"] for score in finite if score["rank_ic"] >= best_score - 1e-12)
+        chosen_params = parameters.get(selected, {})
+        predictions = all_predictions[selected]
+        period = "validation"
+    if evaluation.empty:
+        raise ValueError("No evaluation samples")
+    return {
+        "period": period, "model": selected, "params": chosen_params,
+        "predictions": predictions, "models": fitted,
+        "model_predictions": {selected: predictions} if final_test else all_predictions,
+        "cv_scores": cv_scores, "validation_scores": validation_scores,
+    }

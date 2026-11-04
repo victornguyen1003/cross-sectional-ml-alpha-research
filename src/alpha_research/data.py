@@ -288,3 +288,33 @@ def market_panel(prices, actions, calendar):
     settled = panel.terminal_value.notna().groupby(panel.security_id).cummax()
     panel.loc[settled, "total_open"] = panel.loc[settled, "total_close"]
     return panel
+
+
+def build_dataset(config):
+    """Build point-in-time samples and record their normalized input provenance."""
+    from .features import FEATURES, build_features
+    from .labels import build_labels
+    from .provenance import code_fingerprint, config_fingerprint, file_checksums, write_json
+    from .universe import select_universe
+
+    root, out = Path(config["paths"]["normalized"]), Path(config["paths"]["dataset"])
+    out.mkdir(parents=True, exist_ok=True)
+    prices = pd.read_parquet(root / "prices.parquet")
+    actions = pd.read_parquet(root / "actions.parquet")
+    calendar = pd.DatetimeIndex(pd.read_parquet(root / "calendar.parquet").date)
+    panel = market_panel(prices, actions, calendar)
+    panel = select_universe(panel, config["research"])
+    panel = build_features(panel)
+    samples = build_labels(panel, calendar, config["research"])
+    if samples.empty:
+        raise ValueError("No eligible samples; inspect history, security types and liquidity")
+    samples.to_parquet(out / "samples.parquet", index=False)
+    panel[["date", "security_id", "security_type", "identity_verified", "history_sessions",
+           "liquidity", "eligible", "selected"]].to_parquet(out / "eligibility.parquet", index=False)
+    summary = {"rows": len(samples), "signal_dates": samples.date.nunique(),
+               "missing_labels": int((~samples.label_available).sum()), "features": FEATURES,
+               "config_fingerprint": config_fingerprint(config),
+               "code_fingerprint": code_fingerprint(),
+               "normalized_checksums": file_checksums(root)}
+    write_json(out / "dataset.json", summary)
+    return summary

@@ -27,8 +27,6 @@ probe_dates = ["2010-01-04", "2025-10-01"]
 
 [model]
 cv_splits = 3
-search = "grid"
-random_candidates = 4
 ridge_alpha = [0.1, 1.0, 10.0]
 lasso_alpha = [0.0001, 0.001, 0.01]
 elasticnet_alpha = [0.0001, 0.001, 0.01]

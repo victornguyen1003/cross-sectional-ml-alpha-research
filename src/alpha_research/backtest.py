@@ -1,4 +1,9 @@
-"""Daily fractional-share ledger with explicit missing fills and stale marks."""
+"""Daily fractional-share ledger with explicit missing fills and stale marks.
+
+Rights subscriptions are symmetric and full: longs pay all subscription cash and
+receive all new shares; shorts receive matching cash and owe the new shares.
+Terminal events are assumed recorded and settled before that session's opening.
+"""
 
 import numpy as np
 import pandas as pd
@@ -33,6 +38,8 @@ def simulate(prices, actions, calendar, targets, costs):
             sid = event.security_id
             quantity = shares.get(sid, 0.0)
             dividend = quantity * event.cash_dividend
+            # Full subscription for both signs of quantity; no choice to abstain
+            # or sell rights. Negative quantities reverse the cash/share flows.
             subscription = quantity * event.subscription_ratio * event.subscription_price
             if dividend:
                 receivables.append({"security_id": sid, "amount": dividend,
@@ -46,6 +53,7 @@ def simulate(prices, actions, calendar, targets, costs):
                 marks[sid] = (marks[sid] - event.cash_dividend +
                               event.subscription_ratio * event.subscription_price) / multiplier
             if pd.notna(event.terminal_value):
+                # An input date denotes a pre-open event, never an intraday one.
                 terminal_ids.add(sid)
                 cash += shares.get(sid, 0.0) * event.terminal_value
                 action_income[sid] = action_income.get(sid, 0.0) + shares.get(sid, 0.0) * event.terminal_value

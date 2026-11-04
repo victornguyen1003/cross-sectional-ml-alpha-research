@@ -68,7 +68,9 @@ def fetch_response(root, endpoint, params, settings, offline=False, session=None
             response.raise_for_status()
             payload = response.json()
             status = str(payload.get("stat", ""))
-            if status != "OK" and not any(s in status for s in ["沒有", "查無", "No data"]):
+            no_data = (status.strip().casefold() in {"no data", "no data!", "no data."} or
+                       any(s in status for s in ["沒有", "查無"]))
+            if status != "OK" and not no_data:
                 raise ValueError(f"Unexpected TWSE status {status!r}")
             return store_response(root, endpoint, params, response.content)
         except (requests.RequestException, ValueError) as error:
