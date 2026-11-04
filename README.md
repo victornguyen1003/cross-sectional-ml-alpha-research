@@ -1,82 +1,145 @@
-# Cross-sectional ML Alpha Research
+# AI Agents in ML-Based Alpha Research
 
-A reproducible, exploratory pipeline for Taiwan equity return ranking. Stage one implements data collection, price/volume features, forward labels, modeling, long–short construction, daily accounting, and evaluation. AI-agent integration is reserved for stage two.
+A reproducible, auditable pipeline for cross-sectional Taiwan equity return prediction and ranking.
 
-The research contract is in [AGENTS.md](AGENTS.md), the implementation requirements are in [ROADMAP.md](ROADMAP.md), and detailed data and execution conventions are in [docs/research-specification.md](docs/research-specification.md).
+- **Stage 1 — implemented:** TWSE collection, validation, price/volume features, 20-session return labels, model selection, long–short backtesting with costs, factor attribution, and reports. Models include momentum, OLS, Lasso, Ridge, ElasticNet, and LightGBM. Historical-data completeness remains unresolved.
+- **Stage 2 — planned:** integrate LLM-based AI agents into the research modules. Agent integration is not implemented.
 
-## Setup
+See [AGENTS.md](AGENTS.md) for the research contract, [ROADMAP.md](ROADMAP.md) for milestones, and the [research specification](docs/research-specification.md) for data schemas and accounting conventions. Positive investment performance is not an acceptance requirement.
 
-Use Python 3.13 and [uv](https://docs.astral.sh/uv/):
+## Repository structure
+
+Current project directories, omitting environment files, caches, and individual generated files:
+
+```text
+.
+├── AGENTS.md                    # Research objectives and contract
+├── ROADMAP.md                   # Implementation milestones
+├── README.md                    # Practical execution guide
+├── pyproject.toml               # Dependencies and CLI entry point
+├── uv.lock                      # Locked dependency versions
+├── .python-version              # Python 3.13
+├── configs/default.toml         # Paths, periods, models, and costs
+├── docs/research-specification.md # Detailed data and accounting conventions
+├── src/alpha_research/
+│   ├── __init__.py              # Package description
+│   ├── fetch.py                 # TWSE requests and verified raw cache
+│   ├── data.py                  # Validation, normalization, dataset building
+│   ├── universe.py              # Historical eligibility and liquidity selection
+│   ├── features.py              # Backward-looking price/volume features
+│   ├── labels.py                # Forward returns and percentile targets
+│   ├── models.py                # Preprocessing, tuning, fitting, selection
+│   ├── portfolio.py             # Ranked long–short target weights
+│   ├── backtest.py              # Daily accounting, execution, costs
+│   ├── evaluation.py            # Metrics, benchmarks, sensitivities, reports
+│   ├── factors.py               # Factor downloads, USD conversion, attribution
+│   ├── experiments.py           # Minimal run orchestration
+│   ├── config.py                # TOML loading and validation
+│   ├── provenance.py            # Fingerprints, metadata, final-test guards
+│   └── cli.py                   # Command-line interface
+├── tests/                       # Offline pipeline and accounting tests
+├── data/
+│   ├── raw/                     # TWSE responses and optional audited imports
+│   ├── normalized/              # Validated tables and coverage report
+│   └── factors/                 # JKP factors, FX, risk-free data, and checksums
+└── artifacts/logs/              # Local backfill logs; not produced by the CLI
+```
+
+The default workflow also creates `data/dataset/` and `artifacts/runs/`. Generated data and artifacts are Git-ignored.
+
+## Installation
+
+Install **Python 3.13** and [uv](https://docs.astral.sh/uv/getting-started/installation/), then run from the repository root:
 
 ```bash
 uv sync --locked
 uv run --locked pytest
 ```
 
-The lockfile pins the environment. Pipeline stages use simple functions under `src/alpha_research/`. `experiments.py` only orchestrates runs: `config.py` loads configuration, `data.py` builds datasets, `models.py` fits and selects models, `evaluation.py` saves evaluation outputs, and `provenance.py` preserves input/code fingerprints and final-test guards.
+Python must satisfy `>=3.13,<3.14`; no minimum uv version is specified. These commands install the locked dependencies, including pytest, and run the offline test suite.
 
-The test suite uses small offline fixtures, including hand-calculated accounting cases. There is no standalone synthetic-data generator.
+## End-to-end execution
 
-Each run saves input checksums, resolved configuration, code fingerprints and Git state, dependency versions, predictions, model artifacts, eligibility decisions, target weights, holdings, trades, daily returns, costs, benchmark returns, predictive diagnostics, sensitivity results, and a report/chart below the configured `runs` directory. Existing named runs and cached responses are protected against overwriting.
-
-Metadata uses a single snapshot captured before fitting. `manifest.json` records the seed under `config.research.seed`, Git revision and dirty state, source/input fingerprints, file checksums, and the originating `validation_run`. It does not embed the full selection or a Git diff. `selection.json` contains only the model, parameters, validation-run reference, and configuration/code/input fingerprints; feature definitions and validation scores remain in their separate artifacts.
-
-## Collect historical TWSE data
-
-All configured paths resolve relative to the TOML file. The default configuration uses 2010–2025 data, 2011–2019 training, 2020–2023 validation, and an untouched 2024–2025 final test.
+Run these commands in order from the repository root. `configs/default.toml` uses 2010 for warm-up, 2011–2019 for training, 2020–2023 for validation, and 2024–2025 for held-out testing.
 
 ```bash
+# 1. Probe representative TWSE dates and validate the cached responses.
 uv run --locked alpha-research fetch --config configs/default.toml
 uv run --locked alpha-research validate-data --config configs/default.toml
-```
 
-The initial fetch requests representative dates and their corporate-action months only. Inspect the coverage output, source schemas, suspended/delisted cases, and action terms before starting the full backfill:
-
-```bash
+# Inspect data/normalized/coverage.json before the full download.
+# 2. Download the configured historical period, then validate it.
 uv run --locked alpha-research fetch --config configs/default.toml --bulk
 uv run --locked alpha-research validate-data --config configs/default.toml
+
+# 3. Download JKP Taiwan factors, exchange rates, and risk-free data.
+uv run --locked alpha-research fetch-factors --config configs/default.toml
+
+# 4. Build features, eligibility decisions, and forward-return labels.
 uv run --locked alpha-research build-dataset --config configs/default.toml
+
+# 5. Train, validate, backtest, and run mandatory factor attribution.
 uv run --locked alpha-research run --config configs/default.toml --name validation
+
+# 6. Regenerate the report (run also generates it automatically).
+uv run --locked alpha-research report --config configs/default.toml \
+  --run artifacts/runs/validation
+
+# Review validation results and freeze the specification before continuing.
+# 7. Evaluate the held-out test, including attribution, using the frozen selection.
+uv run --locked alpha-research run --config configs/default.toml \
+  --final-test --selection artifacts/runs/validation/selection.json --name final-test
+uv run --locked alpha-research report --config configs/default.toml \
+  --run artifacts/runs/final-test
 ```
 
-Bulk collection requests weekdays, accepts exchange no-data responses, resumes cached requests, and paces uncached requests. It can take hours. Use `--offline --bulk` to verify complete cache replay without network access. A transport failure, unexpected response schema, or corrupt cache fails explicitly.
+Important flags and behavior:
 
-TWSE daily-price reports provide raw traded shares and TWD value. The public ex-right reference-price report does not supply every term needed for total-return accounting. Unsupported action records are recorded as coverage gaps. Supply explicit, audited action terms, dated security classifications, and the exchange calendar using the canonical imports described in the research specification. Four-digit candidate classifications are labeled unverified; they do not constitute a verified historical common-stock universe.
+- `--config` is required for every command. Paths inside TOML resolve relative to that file; CLI paths such as `--run` and `--selection` resolve from the working directory.
+- `fetch` defaults to configured probe dates and their action-report months. `--bulk` requests weekdays across the period plus monthly corporate-action reports. Downloads are paced, can take hours, and reuse verified cached requests when rerun. Probes alone are insufficient for training.
+- `fetch --bulk --offline` replays the full requested cache without network access, failing on missing or corrupt responses. Finish collection before building the dataset and freezing a selection.
+- `fetch-factors` downloads and caches the configured JKP Taiwan factors, FRED exchange rates, and Kenneth French risk-free data. Add `--offline` to verify/rebuild from cached sources. Runs require these inputs and complete evaluation-session coverage; they never download during fitting.
+- `--name` sets the run-directory name. Existing runs cannot be overwritten: use fresh names and update subsequent paths when repeating the example. Omit it to generate a unique name, printed by the command.
+- `--run` identifies an existing experiment for reporting. `report` refreshes its Markdown report and chart only when mandatory attribution exists and matches the daily returns and saved regression observations.
+- `--final-test` requires `--selection` from a completed validation run. Research-code, configuration, or input changes, including factor/FX/risk-free files, invalidate frozen selections. Rebuild stale datasets and rerun validation after changes.
 
-## Models and final-test isolation
+Hyperparameters use exhaustive grid search with chronological, label-purged training folds. Validation mean Spearman rank correlation selects the model. Final testing refits the frozen specification on matured training and validation labels; keep test results out of subsequent selection decisions.
 
-Compare momentum, OLS, Lasso, Ridge, ElasticNet, and LightGBM using seed 103. Hyperparameters are tuned only inside the training period using expanding chronological date folds and label-end purging. All stocks on a signal date stay in the same fold. Tuning always exhausts the configured parameter grid. Remove the obsolete `model.search` and `model.random_candidates` keys from older configurations.
+## Research outputs
 
-The training-only best settings for each model are compared on validation mean Spearman rank correlation. Ties favor momentum, OLS, Ridge, Lasso, ElasticNet, then LightGBM. Validation runs use a fixed training-period fit. The final run retrains the chosen specification on matured training and validation labels, then keeps that fit fixed throughout the test period.
+Default locations:
 
-A successful validation run produces `selection.json`. Final testing requires both `--final-test` and `--selection`. Configuration, input, or research-code changes invalidate the selection. This guard prevents accidental reuse after changes; it cannot prevent a researcher from repeatedly viewing the final test or manually editing selection files. Keep a research log and treat a viewed final test as spent for future specification selection.
+- `data/raw/`: hashed `.json` response bodies and matching `.meta.json` files with request details, retrieval times, source, and checksums.
+- `data/normalized/`: `prices.parquet`, `actions.parquet`, `calendar.parquet`, and `coverage.json`. Review coverage gaps before interpreting results.
+- `data/factors/`: immutable JKP ZIPs, FRED `fx.csv`, French `risk_free.zip`, and request/checksum sidecars; `factors.csv` and `factors.meta.json` hold the aligned USD factors, FX fixings, risk-free proxy, and source metadata.
+- `data/dataset/`: `samples.parquet` contains features and labels; `eligibility.parquet` records universe decisions; `dataset.json` stores dataset metadata and fingerprints.
+- `artifacts/runs/<name>/`: separate validation and final-test experiment directories.
 
-After reviewing the validation specification, evaluate the held-out test explicitly:
+Important files inside each experiment:
 
-```bash
-uv run --locked alpha-research run --config configs/default.toml --final-test --selection artifacts/runs/validation/selection.json --name final-test
-uv run --locked alpha-research report --config configs/default.toml --run artifacts/runs/final-test
-```
+- `predictions.parquet`: selected-model scores and realized returns. Validation also saves `predictions_<model>.parquet`; fitted estimators are saved as `model_<model>.pkl` where applicable.
+- `targets.parquet`, `holdings.parquet`, `trades.parquet`: intended weights, actual positions, and executed trades. `daily.parquet` contains NAV, gross/net returns, costs, and exposures; `execution_diagnostics.parquet` records execution issues.
+- `metrics.json`: predictive and portfolio metrics, benchmarks, and cost sensitivities. `rank_ic.parquet` and `deciles.parquet` provide predictive diagnostics. `benchmark_momentum_daily.parquet` and `benchmark_equal_weight_daily.parquet` hold benchmark histories.
+- `cv_scores.json`, `validation_scores.json`: tuning and selection results. Run-level `eligibility.parquet` and `coverage.json` preserve relevant universe decisions and limitations.
+- `manifest.json`: creation time, resolved configuration, dependency versions, Git revision/dirty state, source/input fingerprints, file checksums, period, and originating validation run. The seed is under `config.research.seed`.
+- `selection.json`: validation-only frozen model, parameters, originating run, and configuration/code/input fingerprints required for final testing.
+- `report.md`, `performance.png`: readable evaluation summary and performance chart.
+- `factor_regression/summary.json`, `factor_regression/observations.parquet`: required alpha/loadings, fit diagnostics, exact USD regression sample, original TWD returns, FX rates, and checksums. Every validation and final-test report includes attribution.
 
-Model files use Python pickle and should only be loaded from trusted runs. Code/configuration changes require rebuilding the dataset and rerunning validation before final testing.
+### Mandatory factor attribution
 
-## Common-factor return attribution
+`run` performs attribution after backtesting and before saving the frozen selection and report. No separate regression command is needed. Missing factors, incomplete coverage, or invalid regression data stop the run. Inconsistent dates across provider series are recorded in factor metadata; every actual portfolio session must still be covered.
 
-`factors.py` fits a post-backtest OLS regression of daily portfolio excess returns on supplied factor returns. Provide a CSV with one unique session `date`, daily decimal `rf`, and factor columns such as `market`, `smb`, `hml`, and `momentum`. `market` must already be an excess return; spread factors are used as supplied. A value of `0.01` means 1%. Use factors matching the Taiwan portfolio's market, currency and close-to-close session convention; no US factor series or Taiwan proxies are downloaded or invented automatically.
+The default [JKP Taiwan series](https://jkpfactors.com/data) are `mkt` (market excess return), `market_equity` (size), `be_me` (value), and `ret_12_1` (momentum), using capped value weights (`vw_cap`). Names and returns are preserved as supplied; these are not labeled as Fama–French SMB/HML replications. Select the factors and weighting under `[factors]` before validation.
 
-```bash
-uv run --locked alpha-research regress-factors --config configs/default.toml --run artifacts/runs/validation --factors data/factors.csv --columns market smb hml momentum
-```
+Attribution converts net TWD portfolio returns to unhedged USD: `(1 + return_twd) * FX_previous / FX_current - 1`, where FX is [FRED DEXTAUS](https://fred.stlouisfed.org/series/DEXTAUS), in TWD per USD. The first return uses the preceding exchange session's fixing. Only past FX observations are carried forward, for at most `fx_max_age_days` (default 7); factor returns are never filled.
 
-The default dependent variable is the net portfolio `return`; `--return-column gross_return` selects the saved gross series. Use `--risk-free-column NAME` for a different risk-free column, or explicitly pass `--zero-risk-free` to assume zero. Dates are matched exactly and incomplete observations dropped jointly, without forward filling. The command writes `factor_regression/summary.json` and `observations.parquet`, then refreshes the report. Existing attribution output is protected against overwriting.
+The dependent variable subtracts a USD risk-free proxy: [Kenneth French monthly RF](https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html), divided by 100 and 21. This approximates JKP's underlying T-bill rate. Portfolio metrics remain in TWD. Reports disclose the proxy, broader JKP universe, and differences between FRED's New York fixing and JKP vendor FX. OLS point estimates have no significance tests and never affect model selection. JKP data use the provider's noncommercial license.
 
-Outputs include daily alpha, arithmetic annualized alpha (`252 * daily alpha`), loadings, R-squared, residual volatility, alignment counts, and input checksums. These are descriptive point estimates without standard errors or significance tests. They do not enter model selection or change its frozen specification.
+## Limitations and assumptions
 
-## Interpretation
-
-All reports are labeled exploratory/provisional. Missing historical actions, security identity, terminal values, revisions, actual borrow supply, auction liquidity, and historical fee schedules can materially affect results. The simulator uses fractional shares, synthetic borrowing, zero cash interest, and daily-price fill approximations. See the saved coverage report and research specification before interpreting performance. Positive returns are not a software acceptance criterion.
-
-
-The backtest assumes **symmetric full subscription** of rights: longs pay the full subscription cash and receive all subscribed shares; shorts receive the corresponding cash and owe the proportional additional shares. Neither side can opt out, subscribe partially, or sell rights; funding and actual short-side rights arrangements are not modeled.
-
-Terminal events are assumed **always recorded and known before that session's opening**, with terminal proceeds settled and the position removed before opening NAV and orders are computed. Input dates represent pre-open events. Intraday/after-close announcements and delayed settlement are not modeled; the date-only input schema cannot verify this assumption.
+- **Historical data:** public reports do not establish complete historical membership, security identities, calendars, revisions, or delisting proceeds. Default candidate classifications are unverified. Validation reports gaps; it does not certify complete history. Audited imports are described in the research specification.
+- **Corporate actions:** TWSE reference-price reports lack some total-return terms. The engine assumes **symmetric full subscription**: longs pay for all subscribed shares; shorts receive matching cash and owe the additional shares. Optional/partial exercise, rights sales, and funding constraints are not modeled.
+- **Terminal events:** events are assumed **always recorded and known before that session's opening**, with proceeds settled and positions removed before opening NAV and orders. Date-only inputs cannot verify announcement timing; delayed settlement is not modeled.
+- **Short selling:** borrowing is simulated with configurable charges. Historical availability, recalls, collateral, and actual short-side rights arrangements remain unresolved.
+- **Execution:** fractional holdings and daily-price opening-fill approximations do not establish auction liquidity, capacity, or executable historical fills. Fees and slippage are assumptions; cash and short proceeds earn zero interest. Results remain exploratory/provisional.

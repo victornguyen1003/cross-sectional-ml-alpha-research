@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from .backtest import simulate
+from .factors import attribution_summary
 from .models import mean_rank_ic
 from .portfolio import target_weights
 from .provenance import write_json
@@ -67,6 +68,7 @@ def report(run_path):
     import matplotlib.pyplot as plt
 
     root = Path(run_path)
+    attribution = attribution_summary(root)
     metrics = json.loads((root / "metrics.json").read_text())
     coverage = json.loads((root / "coverage.json").read_text())
     daily = pd.read_parquet(root / "daily.parquet")
@@ -96,15 +98,32 @@ def report(run_path):
              f"Mean rank IC: {metrics['predictive']['mean_rank_ic']}.", "",
              "![Performance](performance.png)", "", "## Data limitations", ""]
     lines.extend(f"- {note}" for note in coverage["notes"])
-    attribution_path = root / "factor_regression" / "summary.json"
-    if attribution_path.exists():
-        attribution = json.loads(attribution_path.read_text())
-        lines.extend(["", "## Common-factor return attribution", "",
-                      f"Daily alpha: {attribution['alpha_daily']:.6g}; R-squared: {attribution['r_squared']}.",
-                      f"Complete matched dates: {attribution['observations']}.", "",
-                      "OLS point estimates only; this diagnostic does not enter model selection.", ""])
-        lines.extend(f"- {factor}: {beta:.6g}" for factor, beta in attribution["betas"].items())
-        lines.extend(["", "Details and alignment counts: `factor_regression/summary.json`.", ""])
+    lines.extend(["", "## Common-factor return attribution", "",
+                  f"Daily alpha: {attribution['alpha_daily']:.6g}; "
+                  f"annualized arithmetic alpha: {attribution['alpha_annualized_arithmetic']:.6g}.",
+                  f"R-squared: {attribution['r_squared']}; annualized residual volatility: "
+                  f"{attribution['residual_volatility_annualized']:.6g}.",
+                  f"Complete matched dates: {attribution['observations']} / {attribution['portfolio_dates']} "
+                  f"({attribution['start']} through {attribution['end']}).", "",
+                  f"Return series: {attribution['return_column']}; risk-free column: "
+                  f"{attribution['risk_free_column']}; zero risk-free assumed: {attribution['zero_risk_free_assumed']}.",
+                  "OLS point estimates only; this mandatory diagnostic does not enter model selection.", ""])
+    lines.extend(f"- {factor}: {beta:.6g}" for factor, beta in attribution["betas"].items())
+    if "source" in attribution:
+        source = attribution["source"]
+        lines.extend(["", f"Factor source: {source['url']} ({source['currency']}, {source['units']}); "
+                      f"retrieved {source['retrieved_at']}; SHA-256: {source['sha256']}."])
+        lines.extend(["", f"Risk-free convention: {source['risk_free_convention']}.",
+                      f"FX convention: {source['fx_convention']}.",
+                      "Attribution converts TWD portfolio NAV returns to unhedged USD; portfolio performance above remains in TWD.",
+                      "JKP factors use a broader Taiwan universe and vendor FX; FRED fixing times and the USD risk-free proxy can affect residuals."])
+        lines.append(f"Provider dates excluded for incomplete selected factors: {source['excluded_incomplete_factor_dates']}; "
+                     "all portfolio sessions are required and retained.")
+        lines.extend(f"- {name}: {item['url']}" for name, item in source["sources"].items())
+        if "conversion" in attribution:
+            lines.extend(["", f"Conversion: `{attribution['conversion']['formula']}`; initial FX baseline session: "
+                          f"{attribution['conversion']['initial_fx_date']}."])
+    lines.extend(["", "Details and alignment counts: `factor_regression/summary.json`.", ""])
     lines.extend(["", "- Gross wealth adds cumulative costs back to the same executed share path; it is not a separately rebalanced cost-free strategy.",
                   "- Holdings are marked at the period end without forced liquidation; closing costs are not charged on open positions.",
                   "- Decile returns are descriptive labeled-sample diagnostics, not executable portfolio returns.",

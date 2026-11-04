@@ -15,7 +15,7 @@ Implement the quantitative research pipeline using the following Python modules 
 7. portfolio.py — Prediction ranking and long-short target portfolio construction.
 8. backtest.py — Daily portfolio accounting, rebalancing, execution assumptions, and transaction costs.
 9. evaluation.py — Predictive metrics, portfolio performance, benchmarks, and sensitivity analysis.
-10. factors.py — Post-backtest regression of portfolio excess returns on supplied common-factor returns.
+10. factors.py — Cached JKP Taiwan factor downloads, explicit TWD-to-USD conversion, and mandatory post-backtest return attribution.
 11. experiments.py — Minimal orchestration of model fitting, evaluation, and result storage.
 12. config.py — TOML configuration loading and validation.
 13. provenance.py — Input/code fingerprints, run metadata, and frozen final-test safeguards.
@@ -52,11 +52,12 @@ Implement the quantitative research pipeline using the following Python modules 
 
 ### Milestone 4: Expose Reproducible Commands and Research Outputs
 
-- Provide `fetch`, `validate-data`, `build-dataset`, `run`, `report`, and `regress-factors` commands, each accepting a configuration path. Require an explicit final-test option after the selected specification is frozen.
+- Provide `fetch`, `fetch-factors`, `validate-data`, `build-dataset`, `run`, `report`, and `regress-factors` commands, each accepting a configuration path. Require an explicit final-test option after the selected specification is frozen.
 - Give every run a lean manifest containing resolved configuration (including the seed), dependency versions, Git revision and dirty state, source/input fingerprints, file checksums, and the originating validation-run reference. Reuse a single pre-fit snapshot; keep selection files limited to model, parameters, run reference, and configuration/code/input fingerprints.
 - Save predictions, model artifacts, eligibility decisions, holdings, trades, daily returns, costs, metrics, and data-quality diagnostics.
 - Report rank correlation, decile returns, gross/net performance, drawdown, volatility, Sharpe ratio, turnover, exposure drift, long/short contributions, and cost sensitivities. Include momentum and equal-weight eligible-universe references.
-- Save post-backtest factor-regression point estimates, fitted/residual observations, alignment counts, and source checksums. Factor returns are supplied externally; this diagnostic never affects model selection.
+- Download and checksum-cache JKP Taiwan daily USD market/size/value/momentum series, FRED DEXTAUS FX, and Kenneth French monthly USD risk-free rates. Explicitly convert portfolio NAV returns to USD and disclose FX timing, universe differences, and the monthly-RF/21 proxy.
+- Require complete factor/FX coverage before fitting and mandatory attribution after backtesting in validation and final-test runs. Save point estimates, fitted/residual observations, original TWD returns, FX rates, alignment counts, and source checksums before freezing selection and generating reports. Refuse reports without matching attribution. Factor, FX and risk-free inputs enter frozen-run fingerprints; attribution never affects model selection.
 - Separate validation and final-test outputs. Document experiments and limitations in the README and research specification.
 
 ### Verification and Acceptance

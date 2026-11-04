@@ -1,4 +1,4 @@
-"""Small command-line interface; all paths are relative to the TOML file."""
+"""Small command-line interface; configured paths resolve relative to the TOML file."""
 
 import argparse
 import json
@@ -9,18 +9,19 @@ from .data import build_dataset, validate_data
 from .evaluation import report
 from .experiments import run
 from .fetch import fetch
-from .factors import analyze_run
+from .factors import analyze_run, fetch_factors
 from .provenance import json_safe
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Reproducible exploratory TWSE alpha research")
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ["fetch", "validate-data", "build-dataset", "run", "report", "regress-factors"]:
+    for name in ["fetch", "fetch-factors", "validate-data", "build-dataset", "run", "report", "regress-factors"]:
         command = commands.add_parser(name)
         command.add_argument("--config", required=True, type=Path)
-        if name == "fetch":
+        if name in {"fetch", "fetch-factors"}:
             command.add_argument("--offline", action="store_true")
+        if name == "fetch":
             command.add_argument("--bulk", action="store_true", help="Fetch all weekdays; defaults to representative probes")
         if name == "run":
             command.add_argument("--final-test", action="store_true")
@@ -40,6 +41,8 @@ def main(argv=None):
         config = load_config(args.config)
         if args.command == "fetch":
             result = fetch(config, offline=args.offline, bulk=args.bulk)
+        elif args.command == "fetch-factors":
+            result = fetch_factors(config, offline=args.offline)
         elif args.command == "validate-data":
             result = validate_data(config)
         elif args.command == "build-dataset":

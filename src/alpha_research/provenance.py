@@ -69,7 +69,7 @@ def prepare_run(config, final_test=False, selection_path=None):
         raise ValueError("Final test requires --selection from a completed validation run")
     if not final_test and selection_path is not None:
         raise ValueError("--selection is only used with --final-test")
-    checksums = {name: file_checksums(config["paths"][name]) for name in ["raw", "normalized", "dataset"]}
+    checksums = {name: file_checksums(config["paths"][name]) for name in ["raw", "normalized", "dataset", "factors"]}
     hashes = {"config_fingerprint": config_fingerprint(config), "code_fingerprint": code_fingerprint(),
               "input_fingerprint": fingerprint(checksums)}
     metadata = json.loads((Path(config["paths"]["dataset"]) / "dataset.json").read_text())

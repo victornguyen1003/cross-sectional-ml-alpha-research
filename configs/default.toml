@@ -3,6 +3,7 @@ raw = "../data/raw"
 normalized = "../data/normalized"
 dataset = "../data/dataset"
 runs = "../artifacts/runs"
+factors = "../data/factors"
 
 [research]
 start = "2010-01-01"
@@ -24,6 +25,13 @@ retries = 3
 timeout_seconds = 30
 # Verify representative dates before explicitly requesting --bulk.
 probe_dates = ["2010-01-04", "2025-10-01"]
+
+[factors]
+# JKP Taiwan daily excess/spread returns in USD; preserve provider factor names.
+columns = ["mkt", "market_equity", "be_me", "ret_12_1"]
+weighting = "vw_cap"
+risk_free_column = "rf"
+fx_max_age_days = 7
 
 [model]
 cv_splits = 3

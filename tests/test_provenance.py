@@ -13,8 +13,8 @@ from alpha_research import provenance
 @pytest.fixture
 def recorded_inputs(tmp_path, monkeypatch):
     monkeypatch.setattr(provenance, "code_fingerprint", lambda: "source-before")
-    paths = {name: str(tmp_path / name) for name in ["raw", "normalized", "dataset", "runs"]}
-    for name in ["raw", "normalized", "dataset"]:
+    paths = {name: str(tmp_path / name) for name in ["raw", "normalized", "dataset", "runs", "factors"]}
+    for name in ["raw", "normalized", "dataset", "factors"]:
         Path(paths[name]).mkdir()
         (Path(paths[name]) / "input.txt").write_text(f"{name} input")
     nested = Path(paths["normalized"]) / "nested" / "calendar.txt"
@@ -41,7 +41,7 @@ def test_matching_selection_and_relative_nested_checksums(recorded_inputs):
     assert provenance.fingerprint(snapshot["inputs"]) == snapshot["fingerprints"]["input_fingerprint"]
 
 
-@pytest.mark.parametrize("changed", ["configuration", "source", "raw", "normalized", "dataset"])
+@pytest.mark.parametrize("changed", ["configuration", "source", "raw", "normalized", "dataset", "factors"])
 def test_changed_research_inputs_block_final_test(recorded_inputs, monkeypatch, changed):
     config, selection_path = recorded_inputs
     if changed == "configuration":

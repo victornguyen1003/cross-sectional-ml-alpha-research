@@ -30,5 +30,18 @@ def load_config(path):
         raise ValueError("initial_nav must be positive")
     if config["fetch"]["retries"] < 1 or config["fetch"]["delay_seconds"] < 0:
         raise ValueError("Invalid fetch retries/delay")
+    if "factors" not in config or "factors" not in config["paths"]:
+        raise ValueError("Add paths.factors and the [factors] settings from configs/default.toml")
+    factors = config["factors"]
+    columns = factors["columns"]
+    if (not columns or len(columns) != len(set(columns)) or
+            not set(columns).issubset({"mkt", "market_equity", "be_me", "ret_12_1"})):
+        raise ValueError("Select distinct JKP factors from mkt, market_equity, be_me, ret_12_1")
+    if factors["weighting"] not in {"vw_cap", "vw", "ew"}:
+        raise ValueError("factors.weighting must be vw_cap, vw or ew")
+    if factors["risk_free_column"] != "rf" or factors["fx_max_age_days"] < 0:
+        raise ValueError("Use risk_free_column = rf and nonnegative fx_max_age_days")
+    if len(set(config["paths"].values())) != len(config["paths"]):
+        raise ValueError("Input and output directories must be distinct")
     return config
 

@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -17,6 +16,7 @@ def test_offline_cli_reproduction_and_frozen_holdout(cached_research, monkeypatc
     config_path = cached_research
     config = str(config_path)
     main(["fetch", "--config", config, "--offline"])
+    main(["fetch-factors", "--config", config, "--offline"])
     main(["validate-data", "--config", config])
     main(["build-dataset", "--config", config])
     with pytest.raises(SystemExit) as error:
@@ -52,16 +52,16 @@ def test_offline_cli_reproduction_and_frozen_holdout(cached_research, monkeypatc
                               "code_fingerprint", "input_fingerprint"}
     assert manifest["input_fingerprint"] == selection["input_fingerprint"]
     selection_bytes = (a / "selection.json").read_bytes()
-    daily = pd.read_parquet(root / "test" / "daily.parquet")
-    rng = np.random.default_rng(103)
-    factors = pd.DataFrame(rng.normal(0, 0.01, (len(daily), 4)), columns=["market", "smb", "hml", "momentum"])
-    factors["date"], factors["rf"] = daily.date, 0.0
-    factor_path = config_path.parent / "factors.csv"
-    factors.to_csv(factor_path, index=False)
-    main(["regress-factors", "--config", config, "--run", str(root / "test"),
-          "--factors", str(factor_path), "--columns", "market", "smb", "hml", "momentum"])
-    assert (root / "test" / "factor_regression" / "summary.json").exists()
-    assert "Common-factor return attribution" in (root / "test" / "report.md").read_text()
+    for out in [a, b, root / "test"]:
+        attribution = json.loads((out / "factor_regression" / "summary.json").read_text())
+        assert attribution["currency"] == "USD"
+        assert attribution["observations"] == len(pd.read_parquet(out / "daily.parquet"))
+        assert set(attribution["betas"]) == {"mkt", "market_equity", "be_me", "ret_12_1"}
+        report = (out / "report.md").read_text()
+        assert "Common-factor return attribution" in report
+        assert "unhedged USD" in report and "Risk-free convention" in report
+        assert manifest["inputs"]["factors"]
+    assert (a / "factor_regression" / "summary.json").read_bytes() == (b / "factor_regression" / "summary.json").read_bytes()
     assert (a / "selection.json").read_bytes() == selection_bytes
     changed = load_config(config_path)
     changed["costs"]["borrow_rate"] = 0.9
